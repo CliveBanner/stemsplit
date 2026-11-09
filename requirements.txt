@@ -1,0 +1,8 @@
+demucs==4.0.1
+# torchaudio 2.9+ moved audio saving to the separate torchcodec package,
+# which demucs 4.0.1 does not use, so stay below 2.9.
+torch>=1.12,<2.9
+torchaudio>=0.12,<2.9
+numpy
+librosa>=0.10
+mutagen>=1.45
