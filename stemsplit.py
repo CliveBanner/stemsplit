@@ -7,6 +7,7 @@ encodes them into the stem filenames and ID3 tags (TBPM / TKEY).
 
 import argparse
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -36,6 +37,8 @@ _MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.
 _MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
 # File names demucs writes for each stem (4-stem and --two-stems modes).
 DEMUCS_STEMS = {"vocals", "drums", "bass", "other", "no_vocals"}
+# A key label as detect_key writes it: C, F#, Am, C#m, ...
+KEY_RE = r"[A-G]#?m?"
 
 
 def parse_args():
@@ -141,6 +144,19 @@ def write_tags(path: Path, bpm: int | None, key: str | None) -> None:
     audio.save()
 
 
+def remove_old_labelled(fresh: Path) -> None:
+    """Delete copies of this stem labelled on an earlier run of the same song.
+
+    A re-run can detect a different BPM/key, so the old file would otherwise
+    stay next to the new one. Only exact labels (vocals_121bpm_Am.wav,
+    vocals_121bpm.wav, vocals_Am.wav) in the same format are removed.
+    """
+    pattern = re.compile(rf"{re.escape(fresh.stem)}_(\d+bpm(_{KEY_RE})?|{KEY_RE})")
+    for old in fresh.parent.glob(f"{fresh.stem}_*{fresh.suffix}"):
+        if pattern.fullmatch(old.stem):
+            old.unlink()
+
+
 def tag_and_rename_stems(output: Path, audio: Path, bpm: int | None, key: str | None) -> None:
     stem_dir = output / "htdemucs" / audio.stem
     if not stem_dir.exists():
@@ -151,11 +167,10 @@ def tag_and_rename_stems(output: Path, audio: Path, bpm: int | None, key: str | 
     if key:
         parts.append(key)
     label = "_".join(parts)
-    for f in sorted(stem_dir.iterdir()):
-        # Only touch fresh demucs output; files labelled on an earlier run
-        # of the same song are left alone (and overwritten below if needed).
-        if f.stem not in DEMUCS_STEMS:
-            continue
+    # Fresh demucs output has bare names (vocals.wav); labelled files are ours.
+    fresh = [f for f in sorted(stem_dir.iterdir()) if f.stem in DEMUCS_STEMS]
+    for f in fresh:
+        remove_old_labelled(f)
         new_stem = f"{f.stem}_{label}" if label else f.stem
         new_path = f.parent / f"{new_stem}{f.suffix}"
         f.replace(new_path)
